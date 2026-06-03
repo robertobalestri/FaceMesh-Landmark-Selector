@@ -4,38 +4,46 @@ import { Sidebar } from './components/Sidebar';
 import type { SelectionGroup } from './components/Sidebar';
 import { CanvasArea } from './components/CanvasArea';
 import { initFaceMesh, detectFace } from './services/facemesh';
-import { calculateSymmetryMap } from './utils/geometry';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
+import { useGroupManager } from './hooks/useGroupManager';
 import testImage from './assets/test.png';
+import symmetryMapRaw from './utils/symmetry_map.json';
 import './App.css';
 
-function generateId() {
-  return Math.random().toString(36).substr(2, 9);
-}
-
-function getRandomColor() {
-  const colors = ['#bb86fc', '#03dac6', '#cf6679', '#ffb74d', '#4dd0e1', '#aed581'];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
+const symmetryMap: Record<number, number> = {};
+Object.entries(symmetryMapRaw).forEach(([k, v]) => {
+  symmetryMap[Number(k)] = Number(v);
+});
 
 function App() {
   const [loading, setLoading] = useState(true);
   const [imageSrc, setImageSrc] = useState<string | null>(testImage);
   const [landmarks, setLandmarks] = useState<NormalizedLandmark[] | null>(null);
 
-  // Selection Groups State
-  const [groups, setGroups] = useState<SelectionGroup[]>([
-    { id: '1', name: 'Default', indices: new Set(), visible: true, color: '#bb86fc' }
-  ]);
-  const [activeGroupId, setActiveGroupId] = useState<string>('1');
+  // Hook-based State Management
+  const {
+    groups,
+    activeGroupId,
+    setActiveGroupId,
+    addGroup,
+    deleteGroup,
+    updateGroup,
+    setGroupIndices,
+    replaceAllGroups,
+    updateSelection,
+    resetGroups,
+    undo,
+    redo,
+    canUndo,
+    canRedo
+  } = useGroupManager();
 
   const [brushSize, setBrushSize] = useState(10);
   const [mode, setMode] = useState<'add' | 'subtract'>('add');
   const [dotColor, setDotColor] = useState<'white' | 'black'>('white');
-  const [symmetryMap, setSymmetryMap] = useState<Record<number, number>>({});
-
-  // History not easily compatible with multi-groups yet without deep copy. Disabling for now or simplest implementation.
-  // const historyRef = useRef<Set<number>[]>([]); 
+  const [showWireframe, setShowWireframe] = useState(false);
+  const [offsets, setOffsets] = useState<Record<number, { dx: number, dy: number }>>({});
+  const [imageSize, setImageSize] = useState<{ width: number, height: number } | null>(null);
 
   useEffect(() => {
     initFaceMesh().then(() => {
@@ -49,139 +57,178 @@ function App() {
       const results = detectFace(img);
       if (results) {
         setLandmarks(results);
-        // Reset groups on new image? Or keep?
-        // Let's reset to one default group
-        setGroups([{ id: '1', name: 'Default', indices: new Set(), visible: true, color: '#bb86fc' }]);
+        setImageSize({ width: img.width, height: img.height });
+        // Reset groups on new image
+        resetGroups([{ id: '1', name: 'Default', indices: new Set(), visible: true, color: '#bb86fc' }]);
         setActiveGroupId('1');
-
-        const map = calculateSymmetryMap(results);
-        setSymmetryMap(map);
       } else {
         console.warn("No face detected in loaded image.");
       }
     } catch (e) {
       console.warn("Detection failed (likely not ready):", e);
     }
-  }, []);
+  }, [resetGroups, setActiveGroupId]);
 
-  // Update indices of the ACTIVE group
+  // Update indices of the ACTIVE group via Canvas
   const handleSelectionChange = useCallback((indices: number[], currentMode: 'add' | 'subtract') => {
-    setGroups(prevGroups => {
-      return prevGroups.map(g => {
-        if (g.id !== activeGroupId) return g;
+    updateSelection(indices, currentMode);
+  }, [updateSelection]);
 
-        const nextIndices = new Set(g.indices);
-        let changed = false;
-
-        indices.forEach(idx => {
-          if (currentMode === 'add') {
-            if (!nextIndices.has(idx)) {
-              nextIndices.add(idx);
-              changed = true;
-            }
-          } else {
-            if (nextIndices.has(idx)) {
-              nextIndices.delete(idx);
-              changed = true;
-            }
-          }
-        });
-
-        if (changed) {
-          return { ...g, indices: nextIndices };
-        }
-        return g;
-      });
-    });
-  }, [activeGroupId]);
-
-  // Group Management Handlers
-  const handleAddGroup = () => {
-    const newId = generateId();
-    const newGroup: SelectionGroup = {
-      id: newId,
-      name: `Group ${groups.length + 1}`,
-      indices: new Set(),
-      visible: true,
-      color: getRandomColor()
-    };
-    setGroups([...groups, newGroup]);
-    setActiveGroupId(newId);
-  };
-
-  const handleDeleteGroup = (id: string) => {
-    if (groups.length <= 1) return;
-    const newGroups = groups.filter(g => g.id !== id);
-    setGroups(newGroups);
-    if (activeGroupId === id) {
-      setActiveGroupId(newGroups[0].id);
-    }
-  };
-
-  const handleRenameGroup = (id: string, newName: string) => {
-    setGroups(groups.map(g => g.id === id ? { ...g, name: newName } : g));
-  };
-
-  const handleToggleGroupVisibility = (id: string) => {
-    setGroups(groups.map(g => g.id === id ? { ...g, visible: !g.visible } : g));
-  };
-
-  const handleSetGroupColor = (id: string, color: string) => {
-    setGroups(groups.map(g => g.id === id ? { ...g, color } : g));
-  };
-
-
+  // Wrappers for Sidebar actions that need App logic
   const handleCopySpecular = () => {
-    setGroups(prev => prev.map(g => {
-      if (g.id !== activeGroupId) return g;
-      const next = new Set(g.indices);
-      g.indices.forEach(idx => {
-        if (symmetryMap[idx] !== undefined) {
-          next.add(symmetryMap[idx]);
-        }
-      });
-      return { ...g, indices: next };
-    }));
+    const activeGroup = groups.find(g => g.id === activeGroupId);
+    if (!activeGroup) return;
+
+    const next = new Set(activeGroup.indices);
+    activeGroup.indices.forEach(idx => {
+      if (symmetryMap[idx] !== undefined) {
+        next.add(symmetryMap[idx]);
+      }
+    });
+    setGroupIndices(activeGroupId, next);
   };
 
   const handleClear = () => {
-    setGroups(prev => prev.map(g => {
-      if (g.id !== activeGroupId) return g;
-      return { ...g, indices: new Set() };
-    }));
+    setGroupIndices(activeGroupId, new Set());
   };
 
   const handleInverseSelection = () => {
     if (!landmarks) return;
+    const activeGroup = groups.find(g => g.id === activeGroupId);
+    if (!activeGroup) return;
+
     const allIndices = new Set(landmarks.map((_, i) => i));
-
-    setGroups(prev => prev.map(g => {
-      if (g.id !== activeGroupId) return g;
-
-      const inverse = new Set<number>();
-      allIndices.forEach(idx => {
-        if (!g.indices.has(idx)) {
-          inverse.add(idx);
-        }
-      });
-      return { ...g, indices: inverse };
-    }));
+    const inverse = new Set<number>();
+    allIndices.forEach(idx => {
+      if (!activeGroup.indices.has(idx)) {
+        inverse.add(idx);
+      }
+    });
+    setGroupIndices(activeGroupId, inverse);
   };
 
-  const handleExport = () => {
-    // Export format: { [groupName]: [indices] }
-    const exportData: Record<string, number[]> = {};
-    groups.forEach(g => {
-      exportData[g.name] = Array.from(g.indices).sort((a, b) => a - b);
-    });
+  const handleRenameGroup = (id: string, newName: string) => updateGroup(id, { name: newName });
+  const handleToggleGroupVisibility = (id: string) => {
+    const g = groups.find(g => g.id === id);
+    if (g) updateGroup(id, { visible: !g.visible });
+  };
+  const handleSetGroupColor = (id: string, color: string) => updateGroup(id, { color });
 
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+
+  const handleExport = (format: string = 'json') => {
+    let dataStr = "";
+    let filename = "landmarks_groups";
+
+    const imgW = imageSize?.width || 1;
+    const imgH = imageSize?.height || 1;
+
+    if (format === 'json') {
+      const exportData: Record<string, number[]> = {};
+      groups.forEach(g => {
+        exportData[g.name] = Array.from(g.indices).sort((a, b) => a - b);
+      });
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += ".json";
+    } else if (format === 'csv') {
+      let csvContent = "Group Name,Indices\n";
+      groups.forEach(g => {
+        csvContent += `"${g.name}","${Array.from(g.indices).sort((a, b) => a - b).join(',')}"\n`;
+      });
+      dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      filename += ".csv";
+    } else if (format === 'txt') {
+      let txtContent = "";
+      groups.forEach(g => {
+        txtContent += `[${g.name}]\n`;
+        txtContent += Array.from(g.indices).sort((a, b) => a - b).join(', ') + "\n\n";
+      });
+      dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(txtContent);
+      filename += ".txt";
+    } else if (format === 'json-coords-norm') {
+      if (!landmarks) return;
+      const exportData: Record<string, { index: number, x: number, y: number, z: number }[]> = {};
+      groups.forEach(g => {
+        exportData[g.name] = Array.from(g.indices).sort((a, b) => a - b).map(idx => {
+          const l = landmarks[idx];
+          const off = offsets[idx] || { dx: 0, dy: 0 };
+          return {
+            index: idx,
+            x: l.x + (off.dx / imgW),
+            y: l.y + (off.dy / imgH),
+            z: l.z
+          };
+        });
+      });
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += "_normalized_coords.json";
+    } else if (format === 'json-coords-pixel') {
+      if (!landmarks) return;
+      const exportData: Record<string, { index: number, x: number, y: number, z: number }[]> = {};
+      groups.forEach(g => {
+        exportData[g.name] = Array.from(g.indices).sort((a, b) => a - b).map(idx => {
+          const l = landmarks[idx];
+          const off = offsets[idx] || { dx: 0, dy: 0 };
+          return {
+            index: idx,
+            x: (l.x * imgW) + off.dx,
+            y: (l.y * imgH) + off.dy,
+            z: l.z * imgW
+          };
+        });
+      });
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += "_pixel_coords.json";
+    } else if (format === 'csv-coords-norm') {
+      if (!landmarks) return;
+      let csvContent = "Group Name,Index,X (Normalized),Y (Normalized),Z\n";
+      groups.forEach(g => {
+        Array.from(g.indices).sort((a, b) => a - b).forEach(idx => {
+          const l = landmarks[idx];
+          const off = offsets[idx] || { dx: 0, dy: 0 };
+          const nx = l.x + (off.dx / imgW);
+          const ny = l.y + (off.dy / imgH);
+          csvContent += `"${g.name}",${idx},${nx.toFixed(6)},${ny.toFixed(6)},${l.z.toFixed(6)}\n`;
+        });
+      });
+      dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      filename += "_normalized_coords.csv";
+    } else if (format === 'csv-coords-pixel') {
+      if (!landmarks) return;
+      let csvContent = "Group Name,Index,X (Pixel),Y (Pixel),Z (Scaled)\n";
+      groups.forEach(g => {
+        Array.from(g.indices).sort((a, b) => a - b).forEach(idx => {
+          const l = landmarks[idx];
+          const off = offsets[idx] || { dx: 0, dy: 0 };
+          const px = (l.x * imgW) + off.dx;
+          const py = (l.y * imgH) + off.dy;
+          const pz = l.z * imgW;
+          csvContent += `"${g.name}",${idx},${px.toFixed(2)},${py.toFixed(2)},${pz.toFixed(2)}\n`;
+        });
+      });
+      dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      filename += "_pixel_coords.csv";
+    }
+
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "landmarks_groups.json");
+    downloadAnchorNode.setAttribute("download", filename);
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
+  };
+
+  const handleTransformGroup = (dx: number, dy: number) => {
+    const activeGroup = groups.find(g => g.id === activeGroupId);
+    if (!activeGroup) return;
+
+    setOffsets(prev => {
+      const next = { ...prev };
+      activeGroup.indices.forEach(idx => {
+        const current = next[idx] || { dx: 0, dy: 0 };
+        next[idx] = { dx: current.dx + dx, dy: current.dy + dy };
+      });
+      return next;
+    });
   };
 
   const handleImportJSON = () => {
@@ -198,34 +245,26 @@ function App() {
           const json = JSON.parse(re.target?.result as string);
 
           if (Array.isArray(json)) {
-            // Legacy import: just one array, put in active group
-            setGroups(prev => prev.map(g => {
-              if (g.id !== activeGroupId) return g;
-              return { ...g, indices: new Set(json) };
-            }));
+            // Legacy import
+            setGroupIndices(activeGroupId, new Set(json));
           } else if (typeof json === 'object') {
-            // New format: { "Group1": [...], "Group2": [...] }
-            // Replace all groups
             const newGroups: SelectionGroup[] = [];
-            let firstId = '';
-            Object.entries(json).forEach(([name, indices], idx) => {
-              const id = generateId();
-              if (idx === 0) firstId = id;
-              // Handle if value is not array?
+
+            Object.entries(json).forEach(([name, indices]) => {
+              const id = Math.random().toString(36).substr(2, 9);
               if (Array.isArray(indices)) {
                 newGroups.push({
                   id,
                   name,
                   indices: new Set(indices as number[]),
                   visible: true,
-                  color: getRandomColor()
+                  color: '#bb86fc'
                 });
               }
             });
 
             if (newGroups.length > 0) {
-              setGroups(newGroups);
-              setActiveGroupId(firstId);
+              replaceAllGroups(newGroups);
             } else {
               alert('No valid groups found in JSON.');
             }
@@ -255,13 +294,6 @@ function App() {
     input.click();
   }
 
-  // Flatten selection for Canvas (it needs to know if a point is selected and maybe by what color)
-  // Current CanvasArea might need refactoring to handle multi-color or just "is this point selected?"
-  // But we want to see multiple groups.
-  // We'll pass `groups` to CanvasArea instead of `selection`.
-  // Note: CanvasArea needs update. For now, let's construct a "Master Set" for backward compat if we didn't update CanvasArea?
-  // No, I must update CanvasArea in next step. I'll modify App now assuming CanvasArea will accept `groups`.
-
   return (
     <div className="app-container">
       <Sidebar
@@ -273,8 +305,8 @@ function App() {
         groups={groups}
         activeGroupId={activeGroupId}
         onSetActiveGroup={setActiveGroupId}
-        onAddGroup={handleAddGroup}
-        onDeleteGroup={handleDeleteGroup}
+        onAddGroup={addGroup}
+        onDeleteGroup={deleteGroup}
         onRenameGroup={handleRenameGroup}
         onToggleGroupVisibility={handleToggleGroupVisibility}
         onSetGroupColor={handleSetGroupColor}
@@ -286,21 +318,32 @@ function App() {
         onExport={handleExport}
         onImportJSON={handleImportJSON}
         onUploadClick={handleUpload}
+        onTransformGroup={handleTransformGroup}
 
         dotColor={dotColor}
         setDotColor={setDotColor}
+
+        showWireframe={showWireframe}
+        setShowWireframe={setShowWireframe}
+
+        undo={undo}
+        redo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       <CanvasArea
         imageSrc={loading ? null : imageSrc}
         landmarks={landmarks}
-        groups={groups} // Changed from `selection`
-        activeGroupId={activeGroupId} // To maybe highlight active group more?
+        groups={groups}
+        activeGroupId={activeGroupId}
         brushSize={brushSize}
         mode={mode}
         onSelectionChange={handleSelectionChange}
         onImageLoaded={handleImageLoaded}
         dotColor={dotColor}
+        showWireframe={showWireframe}
+        offsets={offsets}
       />
 
       {loading && (
