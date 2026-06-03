@@ -4,6 +4,8 @@ A **React-based visual tool** for selecting, grouping, and exporting **MediaPipe
 
 This app lets you **interactively pick from the 468 FaceMesh points**, organize them into reusable groups, and export clean JSON configurations for use in masks, filters, AR effects, or face analysis pipelines.
 
+**👉 Try it live: [https://robertobalestri.github.io/FaceMesh-Landmark-Selector/](https://robertobalestri.github.io/FaceMesh-Landmark-Selector/)**
+
 ![FaceMesh Landmark Selector Interface](github_assets/screenshot.png)
 
 ---
