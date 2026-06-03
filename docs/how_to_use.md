@@ -27,13 +27,25 @@ The canvas supports full interactive pan and zoom to help you target precise det
 
 ---
 
-## 3. Selection & Brush Controls
+## 3. Tool Modes (Select vs. Transform)
 
-* **Brush Size**: Drag the slider in the sidebar to change the radius of the selection circle. A circular outline will follow your mouse cursor to represent the current brush area.
+The editor operates in two primary modes via the **Tool Mode** toggle in the sidebar:
+
+### A. Brush Select Mode
+Used to select or deselect landmark indices using a paint-brush cursor:
+* **Brush Size**: Drag the slider to adjust the selection radius.
 * **Selection Mode**:
-  * **Add**: Left-clicking draws selection points.
-  * **Sub**: Left-clicking removes selection points.
-  * *(Tip: You can always use Right-Click to subtract regardless of this setting)*
+  * **Add**: Left-click and drag to paint landmarks into the active group.
+  * **Sub**: Left-click and drag to remove painted landmarks.
+  * *(Shortcut: You can always use Right-click to subtract, regardless of the active selection mode).*
+
+### B. Transform (Drag) Mode
+Allows you to visually edit landmark positions directly on the canvas using your mouse:
+* **Hover Landmark**: Hover your cursor near any point on the canvas. A teal highlight ring will appear around the target point, and the cursor will change to a grab hand.
+* **Drag Landmark**: Left-click and drag a point to adjust its offset position.
+* **Symmetric Drag Toggle (🪞)**: In Transform mode, a floating button labeled **Symmetric Drag: ON/OFF** appears on the right side of the canvas.
+  * **When ON**: Dragging a landmark automatically moves its anatomically mirrored counterpart symmetrically (e.g. moving a left eye corner outward moves the right eye corner outward).
+  * **When OFF**: Dragging a landmark only affects that individual point.
 
 ---
 
@@ -78,3 +90,10 @@ Refer to the [Data Export Guide](export.md) for full formatting details.
 
 * **Export**: Select the format from the dropdown (Indices, Normalized Coordinates, Pixel Coordinates) and click **Export All**.
 * **Import**: Click **Import JSON** to load a previously exported JSON file. The application will reconstruct your groups and indices instantly.
+
+---
+
+## 7. Workspace Persistence & Resetting
+
+* **Automatic Saving**: Every selection group creation, indices change, visibility toggle, color update, and landmark offset adjustment is saved automatically to the browser's `localStorage` in real time. If the page is refreshed or closed, the exact workspace state will restore upon opening.
+* **Reset Workspace**: To clear all groups, active selections, and transform offsets back to the clean default state, click the red **Reset Workspace** button at the bottom of the sidebar and confirm the prompt.

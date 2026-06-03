@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Trash2, Copy, Download, Upload, Plus, Minus, Edit2, Check, X, Eye, EyeOff, RotateCcw, RotateCw, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Trash2, Copy, Download, Upload, Plus, Minus, Edit2, Check, X, Eye, EyeOff, RotateCcw, RotateCw, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, MousePointer, Move } from 'lucide-react';
 
 export interface SelectionGroup {
     id: string;
@@ -48,6 +48,11 @@ interface SidebarProps {
     redo?: () => void;
     canUndo?: boolean;
     canRedo?: boolean;
+
+    // Workspace & Tool State
+    tool: 'select' | 'transform';
+    setTool: (tool: 'select' | 'transform') => void;
+    onResetWorkspace: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -77,7 +82,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     undo,
     redo,
     canUndo = false,
-    canRedo = false
+    canRedo = false,
+    tool,
+    setTool,
+    onResetWorkspace
 }) => {
     const activeGroup = groups.find(g => g.id === activeGroupId);
     const [editingId, setEditingId] = React.useState<string | null>(null);
@@ -251,6 +259,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div className="control-group">
+                <label>Tool Mode</label>
+                <div style={{ display: 'flex', gap: '5px' }}>
+                    <button
+                        className={tool === 'select' ? 'active' : ''}
+                        onClick={() => setTool('select')}
+                        title="Select brush mode"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                    >
+                        <MousePointer size={14} /> Select
+                    </button>
+                    <button
+                        className={tool === 'transform' ? 'active' : ''}
+                        onClick={() => setTool('transform')}
+                        title="Transform/drag mode"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                    >
+                        <Move size={14} /> Transform
+                    </button>
+                </div>
+            </div>
+
+            <div className="control-group">
                 <label>Brush Size: {brushSize}px</label>
                 <input
                     type="range"
@@ -371,6 +401,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <button onClick={onUploadClick} style={{ marginTop: '5px', width: '100%' }}>
                     <Upload size={14} /> New Image
+                </button>
+                <button onClick={onResetWorkspace} className="danger" style={{ marginTop: '5px', width: '100%' }}>
+                    <Trash2 size={14} /> Reset Workspace
                 </button>
             </div>
 

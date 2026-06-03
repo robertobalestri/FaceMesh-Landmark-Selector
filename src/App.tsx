@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import type { SelectionGroup } from './components/Sidebar';
 import { CanvasArea } from './components/CanvasArea';
@@ -44,6 +44,67 @@ function App() {
   const [showWireframe, setShowWireframe] = useState(false);
   const [offsets, setOffsets] = useState<Record<number, { dx: number, dy: number }>>({});
   const [imageSize, setImageSize] = useState<{ width: number, height: number } | null>(null);
+  const [tool, setTool] = useState<'select' | 'transform'>('select');
+
+  const isLoadedRef = useRef(false);
+
+  // Load from local storage on mount
+  useEffect(() => {
+    try {
+      const savedGroupsStr = localStorage.getItem('facemesh_groups');
+      const savedActiveGroupId = localStorage.getItem('facemesh_active_group_id');
+      const savedOffsetsStr = localStorage.getItem('facemesh_offsets');
+
+      if (savedGroupsStr) {
+        const parsed = JSON.parse(savedGroupsStr);
+        const restoredGroups = parsed.map((g: any) => ({
+          ...g,
+          indices: new Set(g.indices)
+        }));
+        replaceAllGroups(restoredGroups);
+      }
+      
+      if (savedActiveGroupId) {
+        setActiveGroupId(savedActiveGroupId);
+      }
+
+      if (savedOffsetsStr) {
+        setOffsets(JSON.parse(savedOffsetsStr));
+      }
+    } catch (e) {
+      console.warn("Failed to load saved workspace:", e);
+    } finally {
+      isLoadedRef.current = true;
+    }
+  }, [replaceAllGroups, setActiveGroupId]);
+
+  // Save to local storage on changes
+  useEffect(() => {
+    if (!isLoadedRef.current) return;
+    try {
+      const serializedGroups = groups.map(g => ({
+        ...g,
+        indices: Array.from(g.indices)
+      }));
+      localStorage.setItem('facemesh_groups', JSON.stringify(serializedGroups));
+      localStorage.setItem('facemesh_active_group_id', activeGroupId);
+      localStorage.setItem('facemesh_offsets', JSON.stringify(offsets));
+    } catch (e) {
+      console.warn("Failed to save workspace:", e);
+    }
+  }, [groups, activeGroupId, offsets]);
+
+  const handleResetWorkspace = () => {
+    if (window.confirm("Are you sure you want to reset the workspace? This will clear all groups and transform offsets.")) {
+      localStorage.removeItem('facemesh_groups');
+      localStorage.removeItem('facemesh_active_group_id');
+      localStorage.removeItem('facemesh_offsets');
+      
+      resetGroups([{ id: '1', name: 'Default', indices: new Set(), visible: true, color: '#bb86fc' }]);
+      setActiveGroupId('1');
+      setOffsets({});
+    }
+  };
 
   useEffect(() => {
     initFaceMesh().then(() => {
@@ -330,6 +391,10 @@ function App() {
         redo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+
+        tool={tool}
+        setTool={setTool}
+        onResetWorkspace={handleResetWorkspace}
       />
 
       <CanvasArea
@@ -344,6 +409,9 @@ function App() {
         dotColor={dotColor}
         showWireframe={showWireframe}
         offsets={offsets}
+        tool={tool}
+        onUpdateOffsets={setOffsets}
+        symmetryMap={symmetryMap}
       />
 
       {loading && (

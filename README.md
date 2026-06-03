@@ -4,6 +4,16 @@ A **React-based visual tool** for selecting, grouping, and exporting **MediaPipe
 
 This app lets you **interactively pick from the 468 FaceMesh points**, organize them into reusable groups, and export clean JSON configurations for use in masks, filters, AR effects, or face analysis pipelines.
 
+![FaceMesh Landmark Selector Interface](github_assets/screenshot.png)
+
+---
+
+## 📚 Documentation
+
+Detailed documentation is available in the `docs` folder:
+- **[User Manual (how_to_use.md)](docs/how_to_use.md)**: A complete walkthrough of controls, canvas navigation, selection tools, and the new interactive **Transform (Drag) Mode**.
+- **[Data Export Guide (export.md)](docs/export.md)**: Details the structure, mathematics, and code formats for exported indices and modified coordinates (normalized and pixel spaces).
+
 ---
 
 ## Why this tool?
@@ -63,24 +73,28 @@ Stop guessing landmark numbers.
 
 ### 🗂 Multi-Group Selection
 - Create unlimited groups
-- Rename, delete, reorder
-- Toggle visibility per group
-- Independent colors per group
+- Rename, delete, customize color
+- Toggle visibility per group to isolate selections
 
-### 🎨 Visual Selection Tools
-- Brush selection (click & drag)
-- Erase mode (`Shift`)
-- Zoom & Pan (Mouse wheel / Middle click)
-- Hover Inspection (Tooltip)
-- Symmetry mirroring
-- Inverse selection
-- Color customization
+### 🎨 Visual Selection & Mesh Editing
+- **Brush Select**: Click & drag to select points, or right-click to subtract.
+- **Transform (Drag) Mode**: Directly drag points on the canvas to adjust coordinates.
+- **🪞 Symmetric Drag Toggle**: Mirror landmark adjustments on the opposite side of the face topologically.
+- **✨ Smart Presets**: Instantly load points for Eyes, Lips, Eyebrows, and Face Oval.
+- **🔄 Undo/Redo**: Full history support for selection changes.
+- **Zoom & Pan**: Smooth scroll wheel zoom and click-and-drag panning.
+- **Mesh Wireframe Toggle**: Overlay the FaceMesh triangulation grid.
+- **Hover Tooltip**: Inspect landmark index numbers under the mouse instantly.
+- **Specular Mirroring & Inverse Selection**: One-click actions on selection groups.
 
+### 💾 Workspace Auto-Save (Persistence)
+- Automatically saves all groups, active selections, visibility, colors, and coordinates to the browser's `localStorage` in real time.
+- Recover your editor state instantly upon browser refresh.
 
-### 📦 Import / Export
-- Export selections as **JSON**
-- Import saved configurations
-- Share or version-control landmark sets
+### 📦 Multi-Format Export
+- **Indices-Only**: Export groups as JSON, CSV, or TXT.
+- **Coordinates (Includes Offset Nudges)**: Export absolute pixel coordinates ($x, y, z$) or normalized coordinates ($x, y, z$) as JSON or CSV.
+- **JSON Import**: Reload previous configurations directly back into the editor.
 
 ### 🖼 Image Support
 - Upload custom images
@@ -148,14 +162,16 @@ Open http://localhost:5173
 ---
 
 ## Roadmap
-- **Undo/Redo History**: robust state management for selections.
-- **Smart Presets**: Quickly select common regions (Lips, Eyes, Face Oval).
-- **Wireframe Mode**: Visualize the face mesh connections.
-- **Lasso Selection**: Select multiple points with a polygon tool.
-- **Local Storage**: Auto-save your work to prevent data loss.
-- **Image Export**: Download the annotated image as PNG.
-- **UI Enhancements**: On-screen Zoom/Pan controls and improved tooltips.
-- **Multi-face Support**: Handle images with multiple faces.
+- [x] **Undo/Redo History**: Robust state management for selection changes.
+- [x] **Smart Presets**: Quickly select common regions (Lips, Eyes, Eyebrows, Face Oval).
+- [x] **Wireframe Mode**: Visualize the face mesh triangulation connections.
+- [x] **Local Storage Auto-Save**: Workspace session auto-save and restore.
+- [x] **Direct Landmark Warping**: Mouse drag-and-drop point translation.
+- [x] **Symmetric Specular Drag**: Anatomically exact topological mirroring.
+- [ ] **Split-screen WebGL 3D View**: Live Three.js head mesh projection viewport.
+- [ ] **AR Export Profiles**: Engine-specific configurations (Spark AR, Lens Studio, TikTok).
+- [ ] **478 Attention Mesh**: High-resolution iris and pupil landmarks.
+- [ ] **Lasso Selection**: Freeform select grouping.
 
 ---
 

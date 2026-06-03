@@ -15,6 +15,9 @@ interface CanvasAreaProps {
     dotColor: 'white' | 'black';
     showWireframe?: boolean;
     offsets?: Record<number, { dx: number, dy: number }>;
+    tool: 'select' | 'transform';
+    onUpdateOffsets: (newOffsets: Record<number, { dx: number, dy: number }>) => void;
+    symmetryMap: Record<number, number>;
 }
 
 export const CanvasArea: React.FC<CanvasAreaProps> = ({
@@ -28,7 +31,10 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     onImageLoaded,
     dotColor,
     showWireframe = false,
-    offsets = {}
+    offsets = {},
+    tool,
+    onUpdateOffsets,
+    symmetryMap = {}
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +45,20 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const [scale, setScale] = useState(1);
     const [offset, setOffset] = useState({ x: 0, y: 0 });
     const [mousePos, setMousePos] = useState<{ x: number, y: number } | null>(null);
+
+    // Transform drag states
+    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [dragStartImagePos, setDragStartImagePos] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
+    const [dragStartOffsets, setDragStartOffsets] = useState<{ idx: number, dx: number, dy: number, isCounterpart?: boolean }[]>([]);
+    const [symmetricEditing, setSymmetricEditing] = useState<boolean>(() => {
+        const saved = localStorage.getItem('facemesh_symmetric_editing');
+        return saved !== null ? JSON.parse(saved) : true;
+    });
+
+    useEffect(() => {
+        localStorage.setItem('facemesh_symmetric_editing', JSON.stringify(symmetricEditing));
+    }, [symmetricEditing]);
 
     // Initial Image Load
     useEffect(() => {
@@ -189,6 +209,18 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                     }
                 }
 
+                // Highlight hovered or dragged point in transform mode
+                const isHovered = tool === 'transform' && index === hoveredIndex;
+                const isDragged = tool === 'transform' && index === draggedIndex;
+
+                if (isHovered || isDragged) {
+                    ctx.strokeStyle = '#03dac6';
+                    ctx.lineWidth = 1.5 / scale;
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius + 4 / scale, 0, 2 * Math.PI);
+                    ctx.stroke();
+                }
+
                 ctx.fillStyle = color;
                 ctx.beginPath();
                 ctx.arc(x, y, radius, 0, 2 * Math.PI);
@@ -214,6 +246,51 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             return;
         }
 
+        if (tool === 'transform' && draggedIndex !== null && loadedImg) {
+            const currentImageX = (mouseX - offset.x) / scale;
+            const currentImageY = (mouseY - offset.y) / scale;
+
+            const deltaX = currentImageX - dragStartImagePos.x;
+            const deltaY = currentImageY - dragStartImagePos.y;
+
+            const nextOffsets = { ...offsets };
+            dragStartOffsets.forEach(item => {
+                if (item.isCounterpart) {
+                    nextOffsets[item.idx] = {
+                        dx: item.dx - deltaX,
+                        dy: item.dy + deltaY
+                    };
+                } else {
+                    nextOffsets[item.idx] = {
+                        dx: item.dx + deltaX,
+                        dy: item.dy + deltaY
+                    };
+                }
+            });
+            onUpdateOffsets(nextOffsets);
+            return;
+        }
+
+        if (tool === 'transform' && draggedIndex === null) {
+            let bestDist = 10;
+            let bestIdx: number | null = null;
+
+            if (landmarks && loadedImg) {
+                landmarks.forEach((l, i) => {
+                    const off = offsets[i] || { dx: 0, dy: 0 };
+                    const lx = (l.x * loadedImg.width + off.dx) * scale + offset.x;
+                    const ly = (l.y * loadedImg.height + off.dy) * scale + offset.y;
+                    const dist = Math.sqrt(Math.pow(mouseX - lx, 2) + Math.pow(mouseY - ly, 2));
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
+                    }
+                });
+            }
+            setHoveredIndex(bestIdx);
+            return;
+        }
+
         if (!drawingMode || !landmarks || !loadedImg) return;
 
         const indices: number[] = [];
@@ -235,16 +312,45 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
             setIsPanning(true);
-        } else if (e.button === 0) {
-            setDrawingMode(mode);
-            // manually trigger the first brush action
+            return;
+        }
+
+        if (tool === 'transform' && hoveredIndex !== null && loadedImg) {
             const rect = canvasRef.current!.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const imageX = (mouseX - offset.x) / scale;
+            const imageY = (mouseY - offset.y) / scale;
+
+            setDraggedIndex(hoveredIndex);
+            setDragStartImagePos({ x: imageX, y: imageY });
+
+            const initial: { idx: number; dx: number; dy: number; isCounterpart: boolean }[] = [];
+            
+            // Drag the main hovered point
+            const currentOff = offsets[hoveredIndex] || { dx: 0, dy: 0 };
+            initial.push({ idx: hoveredIndex, dx: currentOff.dx, dy: currentOff.dy, isCounterpart: false });
+
+            // Symmetrical counterpart dragging
+            if (symmetricEditing) {
+                const counterpartIndex = symmetryMap[hoveredIndex];
+                if (counterpartIndex !== undefined && counterpartIndex !== hoveredIndex) {
+                    const counterpartOff = offsets[counterpartIndex] || { dx: 0, dy: 0 };
+                    initial.push({ idx: counterpartIndex, dx: counterpartOff.dx, dy: counterpartOff.dy, isCounterpart: true });
+                }
+            }
+            
+            setDragStartOffsets(initial);
+            return;
+        }
+
+        if (e.button === 0) {
+            setDrawingMode(mode);
             setMousePos({ x: e.clientX, y: e.clientY });
             handleMouseMove(e);
         } else if (e.button === 2) {
             setDrawingMode(mode === 'add' ? 'subtract' : 'add');
-            // manually trigger the first brush action
-            const rect = canvasRef.current!.getBoundingClientRect();
             setMousePos({ x: e.clientX, y: e.clientY });
             handleMouseMove(e);
         }
@@ -257,12 +363,26 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const handleMouseUp = () => {
         setDrawingMode(null);
         setIsPanning(false);
+        setDraggedIndex(null);
+        setDragStartOffsets([]);
     };
 
     const handleMouseLeave = () => {
         setDrawingMode(null);
         setIsPanning(false);
         setMousePos(null);
+        setDraggedIndex(null);
+        setDragStartOffsets([]);
+        setHoveredIndex(null);
+    };
+
+    const getCursor = () => {
+        if (isPanning) return 'grabbing';
+        if (tool === 'transform') {
+            if (draggedIndex !== null) return 'grabbing';
+            if (hoveredIndex !== null) return 'grab';
+        }
+        return 'default';
     };
 
     return (
@@ -274,7 +394,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseLeave}
                 onContextMenu={handleContextMenu}
-                style={{ display: 'block' }}
+                style={{ display: 'block', cursor: getCursor() }}
             />
             {/* Legend Overlay */}
             <div style={{
@@ -293,11 +413,23 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
                 zIndex: 10
             }}>
-                <span style={{ fontWeight: 'bold', color: '#bb86fc' }}>Left Click</span>
-                <span>Add to selection</span>
+                {tool === 'select' ? (
+                    <>
+                        <span style={{ fontWeight: 'bold', color: '#bb86fc' }}>Left Click</span>
+                        <span>Add to selection</span>
 
-                <span style={{ fontWeight: 'bold', color: '#cf6679' }}>Right Click</span>
-                <span>Remove from selection</span>
+                        <span style={{ fontWeight: 'bold', color: '#cf6679' }}>Right Click</span>
+                        <span>Remove from selection</span>
+                    </>
+                ) : (
+                    <>
+                        <span style={{ fontWeight: 'bold', color: '#03dac6' }}>Drag Landmark</span>
+                        <span>Move landmark position</span>
+
+                        <span style={{ fontWeight: 'bold', color: '#bb86fc' }}>Symmetric Drag</span>
+                        <span>Mirrors offset on other side</span>
+                    </>
+                )}
 
                 <span style={{ fontWeight: 'bold', color: '#03dac6' }}>Mouse Wheel Click / Shift + Left click</span>
                 <span>Pan image</span>
@@ -305,7 +437,37 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 <span style={{ fontWeight: 'bold', color: '#ffb74d' }}>Scroll</span>
                 <span>Zoom in/out</span>
             </div>
-            {mousePos && !isPanning && (
+
+            {/* Symmetry Toggle Button */}
+            {tool === 'transform' && (
+                <button 
+                    onClick={() => setSymmetricEditing(!symmetricEditing)}
+                    style={{
+                        position: 'absolute',
+                        top: '140px',
+                        right: '10px',
+                        backgroundColor: symmetricEditing ? 'rgba(3, 218, 198, 0.9)' : 'rgba(0, 0, 0, 0.75)',
+                        color: symmetricEditing ? 'black' : 'white',
+                        border: symmetricEditing ? '1px solid #03dac6' : '1px solid #444',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        zIndex: 11,
+                        transition: 'all 0.2s ease',
+                        pointerEvents: 'auto'
+                    }}
+                >
+                    <span>🪞 Symmetric Drag: {symmetricEditing ? "ON" : "OFF"}</span>
+                </button>
+            )}
+
+            {mousePos && !isPanning && tool === 'select' && (
                 <div 
                     style={{
                         position: 'fixed',
