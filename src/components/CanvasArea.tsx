@@ -15,7 +15,7 @@ interface CanvasAreaProps {
     dotColor: 'white' | 'black';
     showWireframe?: boolean;
     offsets?: Record<number, { dx: number, dy: number }>;
-    tool: 'select' | 'transform';
+    tool: 'select' | 'lasso' | 'transform';
     onUpdateOffsets: (newOffsets: Record<number, { dx: number, dy: number }>) => void;
     symmetryMap: Record<number, number>;
 }
@@ -59,6 +59,32 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     useEffect(() => {
         localStorage.setItem('facemesh_symmetric_editing', JSON.stringify(symmetricEditing));
     }, [symmetricEditing]);
+
+    // Lasso states
+    const [lassoPoints, setLassoPoints] = useState<{ x: number, y: number }[]>([]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setLassoPoints([]);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const isPointInPolygon = (p: { x: number, y: number }, polygon: { x: number, y: number }[]) => {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            
+            const intersect = ((yi > p.y) !== (yj > p.y))
+                && (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
 
     // Initial Image Load
     useEffect(() => {
@@ -105,7 +131,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         if (loadedImg) {
             draw(loadedImg);
         }
-    }, [landmarks, groups, activeGroupId, dotColor, showWireframe, scale, offset, loadedImg, offsets]);
+    }, [landmarks, groups, activeGroupId, dotColor, showWireframe, scale, offset, loadedImg, offsets, lassoPoints, mousePos, tool]);
 
     // Zoom Handling
     useEffect(() => {
@@ -179,6 +205,60 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                     }
                 }
                 ctx.stroke();
+            }
+
+            // Draw Lasso polygon outline
+            if (tool === 'lasso' && lassoPoints.length > 0) {
+                // Calculate if mouse is near first point (dist < 15px in screenspace)
+                let isNearFirstPoint = false;
+                if (lassoPoints.length >= 3 && mousePos && canvasRef.current) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const mouseX = mousePos.x - rect.left;
+                    const mouseY = mousePos.y - rect.top;
+                    const firstPtX = lassoPoints[0].x * scale + offset.x;
+                    const firstPtY = lassoPoints[0].y * scale + offset.y;
+                    const dist = Math.sqrt(Math.pow(mouseX - firstPtX, 2) + Math.pow(mouseY - firstPtY, 2));
+                    if (dist < 15) {
+                        isNearFirstPoint = true;
+                    }
+                }
+
+                ctx.strokeStyle = isNearFirstPoint ? '#ffb74d' : '#03dac6';
+                ctx.lineWidth = 2 / scale;
+                ctx.beginPath();
+                ctx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+                for (let i = 1; i < lassoPoints.length; i++) {
+                    ctx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+                }
+                if (isNearFirstPoint) {
+                    ctx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
+                } else if (mousePos && canvasRef.current) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    const imgMouseX = (mousePos.x - rect.left - offset.x) / scale;
+                    const imgMouseY = (mousePos.y - rect.top - offset.y) / scale;
+                    ctx.lineTo(imgMouseX, imgMouseY);
+                }
+                ctx.stroke();
+                
+                // Draw dots at vertices
+                lassoPoints.forEach((pt, idx) => {
+                    ctx.beginPath();
+                    if (idx === 0 && isNearFirstPoint) {
+                        ctx.fillStyle = '#ffb74d';
+                        ctx.arc(pt.x, pt.y, 7 / scale, 0, 2 * Math.PI);
+                        ctx.fill();
+
+                        ctx.strokeStyle = '#ffb74d';
+                        ctx.lineWidth = 1.5 / scale;
+                        ctx.beginPath();
+                        ctx.arc(pt.x, pt.y, 11 / scale, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    } else {
+                        ctx.fillStyle = '#03dac6';
+                        ctx.arc(pt.x, pt.y, 4 / scale, 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                });
             }
 
             // Draw Landmarks
@@ -345,6 +425,31 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             return;
         }
 
+        if (tool === 'lasso') {
+            if (e.button === 0 && loadedImg) {
+                const rect = canvasRef.current!.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const imageX = (mouseX - offset.x) / scale;
+                const imageY = (mouseY - offset.y) / scale;
+
+                // If user clicks near the first vertex, complete and validate lasso selection
+                if (lassoPoints.length >= 3) {
+                    const firstPtX = lassoPoints[0].x * scale + offset.x;
+                    const firstPtY = lassoPoints[0].y * scale + offset.y;
+                    const dist = Math.sqrt(Math.pow(mouseX - firstPtX, 2) + Math.pow(mouseY - firstPtY, 2));
+                    if (dist < 15) {
+                        validateLasso();
+                        return;
+                    }
+                }
+
+                setLassoPoints(prev => [...prev, { x: imageX, y: imageY }]);
+            }
+            return;
+        }
+
         if (e.button === 0) {
             setDrawingMode(mode);
             setMousePos({ x: e.clientX, y: e.clientY });
@@ -354,6 +459,30 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             setMousePos({ x: e.clientX, y: e.clientY });
             handleMouseMove(e);
         }
+    };
+
+    const validateLasso = (points = lassoPoints) => {
+        if (points.length < 3 || !landmarks || !loadedImg) return;
+
+        const selected: number[] = [];
+        landmarks.forEach((l, i) => {
+            const off = offsets[i] || { dx: 0, dy: 0 };
+            const lx = l.x * loadedImg.width + off.dx;
+            const ly = l.y * loadedImg.height + off.dy;
+            if (isPointInPolygon({ x: lx, y: ly }, points)) {
+                selected.push(i);
+            }
+        });
+
+        if (selected.length > 0) {
+            onSelectionChange(selected, mode);
+        }
+
+        setLassoPoints([]);
+    };
+
+    const handleDoubleClick = () => {
+        validateLasso();
     };
 
     const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -393,6 +522,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseLeave}
+                onDoubleClick={handleDoubleClick}
                 onContextMenu={handleContextMenu}
                 style={{ display: 'block', cursor: getCursor() }}
             />
@@ -413,7 +543,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                 boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
                 zIndex: 10
             }}>
-                {tool === 'select' ? (
+                {tool === 'select' && (
                     <>
                         <span style={{ fontWeight: 'bold', color: '#bb86fc' }}>Left Click</span>
                         <span>Add to selection</span>
@@ -421,7 +551,20 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                         <span style={{ fontWeight: 'bold', color: '#cf6679' }}>Right Click</span>
                         <span>Remove from selection</span>
                     </>
-                ) : (
+                )}
+                {tool === 'lasso' && (
+                    <>
+                        <span style={{ fontWeight: 'bold', color: '#bb86fc' }}>Left Click</span>
+                        <span>Add point to polygon</span>
+
+                        <span style={{ fontWeight: 'bold', color: '#cf6679' }}>Double Click</span>
+                        <span>Close lasso & select landmarks</span>
+
+                        <span style={{ fontWeight: 'bold', color: '#888' }}>Escape</span>
+                        <span>Cancel drawing</span>
+                    </>
+                )}
+                {tool === 'transform' && (
                     <>
                         <span style={{ fontWeight: 'bold', color: '#03dac6' }}>Drag Landmark</span>
                         <span>Move landmark position</span>

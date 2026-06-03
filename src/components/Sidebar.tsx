@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Trash2, Copy, Download, Upload, Plus, Minus, Edit2, Check, X, Eye, EyeOff, RotateCcw, RotateCw, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, MousePointer, Move } from 'lucide-react';
+import { Trash2, Copy, Download, Upload, Plus, Minus, Edit2, Check, X, Eye, EyeOff, RotateCcw, RotateCw, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, MousePointer, Move, Scissors } from 'lucide-react';
 
 export interface SelectionGroup {
     id: string;
@@ -50,8 +50,10 @@ interface SidebarProps {
     canRedo?: boolean;
 
     // Workspace & Tool State
-    tool: 'select' | 'transform';
-    setTool: (tool: 'select' | 'transform') => void;
+    tool: 'select' | 'lasso' | 'transform';
+    setTool: (tool: 'select' | 'lasso' | 'transform') => void;
+    show3D: boolean;
+    setShow3D: (show: boolean) => void;
     onResetWorkspace: () => void;
 }
 
@@ -85,6 +87,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     canRedo = false,
     tool,
     setTool,
+    show3D,
+    setShow3D,
     onResetWorkspace
 }) => {
     const activeGroup = groups.find(g => g.id === activeGroupId);
@@ -116,7 +120,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         "Right Eye": [263, 466, 388, 387, 386, 385, 384, 398, 362, 382, 381, 380],
         "Left Eyebrow": [70, 63, 105, 66, 107, 55, 65, 52, 53, 46],
         "Right Eyebrow": [336, 296, 334, 293, 300, 276, 283, 282, 295, 285],
-        "Face Oval": [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109]
+        "Face Oval": [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109],
+        "Irises": [468, 469, 470, 471, 472, 473, 474, 475, 476, 477]
     };
 
     return (
@@ -265,17 +270,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className={tool === 'select' ? 'active' : ''}
                         onClick={() => setTool('select')}
                         title="Select brush mode"
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 4px', fontSize: '0.85rem' }}
                     >
-                        <MousePointer size={14} /> Select
+                        <MousePointer size={14} /> Brush
+                    </button>
+                    <button
+                        className={tool === 'lasso' ? 'active' : ''}
+                        onClick={() => setTool('lasso')}
+                        title="Lasso selection mode"
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 4px', fontSize: '0.85rem' }}
+                    >
+                        <Scissors size={14} /> Lasso
                     </button>
                     <button
                         className={tool === 'transform' ? 'active' : ''}
                         onClick={() => setTool('transform')}
                         title="Transform/drag mode"
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px 4px', fontSize: '0.85rem' }}
                     >
-                        <Move size={14} /> Transform
+                        <Move size={14} /> Move
                     </button>
                 </div>
             </div>
@@ -315,15 +328,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <div className="control-group">
                 <label>View Options</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                     <button
                         className={showWireframe ? 'active' : ''}
                         onClick={() => setShowWireframe(!showWireframe)}
-                        style={{ flex: 1 }}
+                        style={{ width: '100%' }}
                     >
-                        {showWireframe ? 'Hide Mesh' : 'Show Mesh'}
+                        {showWireframe ? 'Hide Mesh Wireframe' : 'Show Mesh Wireframe'}
                     </button>
-                    {/* Dot Color Toggle reusing existing logic or moving here? */}
+                    <button
+                        className={show3D ? 'active' : ''}
+                        onClick={() => setShow3D(!show3D)}
+                        style={{ width: '100%' }}
+                    >
+                        {show3D ? 'Hide 3D View' : 'Show 3D View'}
+                    </button>
                 </div>
             </div>
 
@@ -389,6 +408,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <option value="json-coords-pixel">JSON (Pixel Coords)</option>
                         <option value="csv-coords-norm">CSV (Normalized Coords)</option>
                         <option value="csv-coords-pixel">CSV (Pixel Coords)</option>
+                        <option value="spark-ar">Spark AR (Centered Y-up Z-out)</option>
+                        <option value="lens-studio">Lens Studio (Snapchat Y-up Z-out)</option>
+                        <option value="tiktok">TikTok Effect House (Y-up Z-out)</option>
                     </select>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>

@@ -134,3 +134,89 @@ Group Name,Index,X (Pixel),Y (Pixel),Z (Scaled)
 [Lips]
 0, 17, 37, 39, 40, 61, 84, 91, 146, 181, 185, 267, 269, 270, 291, 314, 321, 375, 405, 409
 ```
+
+---
+
+## 4. AR Platform Export Profiles
+
+To facilitate seamless importing into popular AR development engines, the application offers custom coordinate mapping profiles. In all profiles, coordinates are centered to the face mesh centroid, converting coordinates from Y-down (image coordinates) to Y-up (standard 3D engine coordinate system) and Z-out (pointing towards the camera).
+
+### A. Spark AR (Meta)
+* **Filename**: `landmarks_groups_spark_ar.json`
+* **Coordinate System**: Y-up, Z-out (right-handed).
+* **Format**: Maps groups to landmark coordinate objects containing indices.
+```json
+{
+  "spark_ar_profile": {
+    "metadata": {
+      "coordinate_system": "Y-up, Z-out (right-handed)",
+      "centered": true,
+      "unit": "normalized-face-scale"
+    },
+    "groups": {
+      "Lips": [
+        {
+          "index": 0,
+          "x": -0.000305,
+          "y": -0.046394,
+          "z": 0.051939
+        }
+      ]
+    }
+  }
+}
+```
+
+### B. Lens Studio (Snapchat)
+* **Filename**: `landmarks_groups_lens_studio.json`
+* **Coordinate System**: Y-up, Z-out (right-handed).
+* **Format**: Maps groups to lists of indices and corresponding coordinates.
+```json
+{
+  "lens_studio_profile": {
+    "metadata": {
+      "coordinate_system": "Y-up, Z-out (right-handed)",
+      "centered": true,
+      "unit": "normalized-face-scale"
+    },
+    "groups": {
+      "Lips": {
+        "indices": [0, 17],
+        "points": [
+          {
+            "x": -0.000305,
+            "y": -0.046394,
+            "z": 0.051939
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+### C. TikTok (Effect House)
+* **Filename**: `landmarks_groups_tiktok.json`
+* **Coordinate System**: Y-up, Z-out (right-handed).
+* **Format**: Maps groups to indices and flat coordinate arrays of `[x, y, z]` for script consumption.
+```json
+{
+  "tiktok_profile": {
+    "metadata": {
+      "coordinate_system": "Y-up, Z-out (right-handed)",
+      "centered": true,
+      "unit": "normalized-face-scale"
+    },
+    "groups": {
+      "Lips": {
+        "indices": [0, 17],
+        "coords": [
+          -0.000305,
+          -0.046394,
+          0.051939
+        ]
+      }
+    }
+  }
+}
+```

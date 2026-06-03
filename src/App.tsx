@@ -1,5 +1,5 @@
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import type { SelectionGroup } from './components/Sidebar';
 import { CanvasArea } from './components/CanvasArea';
@@ -8,6 +8,7 @@ import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { useGroupManager } from './hooks/useGroupManager';
 import testImage from './assets/test.png';
 import symmetryMapRaw from './utils/symmetry_map.json';
+const ThreeDPreview = lazy(() => import('./components/ThreeDPreview').then(m => ({ default: m.ThreeDPreview })));
 import './App.css';
 
 const symmetryMap: Record<number, number> = {};
@@ -44,7 +45,8 @@ function App() {
   const [showWireframe, setShowWireframe] = useState(false);
   const [offsets, setOffsets] = useState<Record<number, { dx: number, dy: number }>>({});
   const [imageSize, setImageSize] = useState<{ width: number, height: number } | null>(null);
-  const [tool, setTool] = useState<'select' | 'transform'>('select');
+  const [tool, setTool] = useState<'select' | 'lasso' | 'transform'>('select');
+  const [show3D, setShow3D] = useState(false);
 
   const isLoadedRef = useRef(false);
 
@@ -268,6 +270,135 @@ function App() {
       });
       dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
       filename += "_pixel_coords.csv";
+    } else if (format === 'spark-ar') {
+      if (!landmarks) return;
+      const imgW = imageSize?.width || 1;
+      const imgH = imageSize?.height || 1;
+      let sumX = 0, sumY = 0, sumZ = 0;
+      landmarks.forEach((l, idx) => {
+        const off = offsets[idx] || { dx: 0, dy: 0 };
+        sumX += l.x + (off.dx / imgW);
+        sumY += l.y + (off.dy / imgH);
+        sumZ += l.z;
+      });
+      const cx = sumX / landmarks.length;
+      const cy = sumY / landmarks.length;
+      const cz = sumZ / landmarks.length;
+
+      const exportData: any = {
+        spark_ar_profile: {
+          metadata: {
+            coordinate_system: "Y-up, Z-out (right-handed)",
+            centered: true,
+            unit: "normalized-face-scale"
+          },
+          groups: {}
+        }
+      };
+
+      groups.forEach(g => {
+        exportData.spark_ar_profile.groups[g.name] = Array.from(g.indices).sort((a, b) => a - b).map(idx => {
+          const l = landmarks[idx];
+          const off = offsets[idx] || { dx: 0, dy: 0 };
+          return {
+            index: idx,
+            x: (l.x + (off.dx / imgW)) - cx,
+            y: -((l.y + (off.dy / imgH)) - cy),
+            z: -(l.z - cz)
+          };
+        });
+      });
+
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += "_spark_ar.json";
+    } else if (format === 'lens-studio') {
+      if (!landmarks) return;
+      const imgW = imageSize?.width || 1;
+      const imgH = imageSize?.height || 1;
+      let sumX = 0, sumY = 0, sumZ = 0;
+      landmarks.forEach((l, idx) => {
+        const off = offsets[idx] || { dx: 0, dy: 0 };
+        sumX += l.x + (off.dx / imgW);
+        sumY += l.y + (off.dy / imgH);
+        sumZ += l.z;
+      });
+      const cx = sumX / landmarks.length;
+      const cy = sumY / landmarks.length;
+      const cz = sumZ / landmarks.length;
+
+      const exportData: any = {
+        lens_studio_profile: {
+          metadata: {
+            coordinate_system: "Y-up, Z-out (right-handed)",
+            centered: true,
+            unit: "normalized-face-scale"
+          },
+          groups: {}
+        }
+      };
+
+      groups.forEach(g => {
+        const sorted = Array.from(g.indices).sort((a, b) => a - b);
+        exportData.lens_studio_profile.groups[g.name] = {
+          indices: sorted,
+          points: sorted.map(idx => {
+            const l = landmarks[idx];
+            const off = offsets[idx] || { dx: 0, dy: 0 };
+            return {
+              x: (l.x + (off.dx / imgW)) - cx,
+              y: -((l.y + (off.dy / imgH)) - cy),
+              z: -(l.z - cz)
+            };
+          })
+        };
+      });
+
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += "_lens_studio.json";
+    } else if (format === 'tiktok') {
+      if (!landmarks) return;
+      const imgW = imageSize?.width || 1;
+      const imgH = imageSize?.height || 1;
+      let sumX = 0, sumY = 0, sumZ = 0;
+      landmarks.forEach((l, idx) => {
+        const off = offsets[idx] || { dx: 0, dy: 0 };
+        sumX += l.x + (off.dx / imgW);
+        sumY += l.y + (off.dy / imgH);
+        sumZ += l.z;
+      });
+      const cx = sumX / landmarks.length;
+      const cy = sumY / landmarks.length;
+      const cz = sumZ / landmarks.length;
+
+      const exportData: any = {
+        tiktok_profile: {
+          metadata: {
+            coordinate_system: "Y-up, Z-out (right-handed)",
+            centered: true,
+            unit: "normalized-face-scale"
+          },
+          groups: {}
+        }
+      };
+
+      groups.forEach(g => {
+        const sorted = Array.from(g.indices).sort((a, b) => a - b);
+        exportData.tiktok_profile.groups[g.name] = {
+          indices: sorted,
+          coords: sorted.flatMap(idx => {
+            const l = landmarks[idx];
+            const off = offsets[idx] || { dx: 0, dy: 0 };
+            return [
+              (l.x + (off.dx / imgW)) - cx,
+              -((l.y + (off.dy / imgH)) - cy),
+              -(l.z - cz)
+            ];
+          })
+        };
+      });
+
+      dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      filename += "_tiktok.json";
     }
 
     const downloadAnchorNode = document.createElement('a');
@@ -394,40 +525,78 @@ function App() {
 
         tool={tool}
         setTool={setTool}
+        show3D={show3D}
+        setShow3D={setShow3D}
         onResetWorkspace={handleResetWorkspace}
       />
 
-      <CanvasArea
-        imageSrc={loading ? null : imageSrc}
-        landmarks={landmarks}
-        groups={groups}
-        activeGroupId={activeGroupId}
-        brushSize={brushSize}
-        mode={mode}
-        onSelectionChange={handleSelectionChange}
-        onImageLoaded={handleImageLoaded}
-        dotColor={dotColor}
-        showWireframe={showWireframe}
-        offsets={offsets}
-        tool={tool}
-        onUpdateOffsets={setOffsets}
-        symmetryMap={symmetryMap}
-      />
-
-      {loading && (
-        <div className="loading-overlay">
-          <h2>Initializing FaceMesh...</h2>
+      <div className="main-content-area" style={{ display: 'flex', flex: 1, height: '100%', overflow: 'hidden', position: 'relative' }}>
+        <div style={{ flex: 1, height: '100%', position: 'relative', overflow: 'hidden' }}>
+          <CanvasArea
+            imageSrc={loading ? null : imageSrc}
+            landmarks={landmarks}
+            groups={groups}
+            activeGroupId={activeGroupId}
+            brushSize={brushSize}
+            mode={mode}
+            onSelectionChange={handleSelectionChange}
+            onImageLoaded={handleImageLoaded}
+            dotColor={dotColor}
+            showWireframe={showWireframe}
+            offsets={offsets}
+            tool={tool}
+            onUpdateOffsets={setOffsets}
+            symmetryMap={symmetryMap}
+          />
         </div>
-      )}
 
-      {!imageSrc && !loading && (
-        <div className="upload-overlay">
-          <h2>Select an Image to Start</h2>
-          <button onClick={handleUpload} className="primary" style={{ marginTop: 20 }}>
-            Upload Image
-          </button>
-        </div>
-      )}
+        {show3D && (
+          <div style={{ flex: 1, height: '100%', borderLeft: '1px solid #2d2d2d', position: 'relative', overflow: 'hidden' }}>
+            <Suspense fallback={
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                backgroundColor: '#121212',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#888',
+                zIndex: 2,
+                fontFamily: 'Inter, sans-serif'
+              }}>
+                <h3 style={{ margin: 0, color: '#bb86fc' }}>Loading 3D Viewport...</h3>
+              </div>
+            }>
+              <ThreeDPreview
+                landmarks={landmarks}
+                groups={groups}
+                activeGroupId={activeGroupId}
+                offsets={offsets}
+                imageSrc={loading ? null : imageSrc}
+                imageSize={imageSize}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        {loading && (
+          <div className="loading-overlay">
+            <h2>Initializing FaceMesh...</h2>
+          </div>
+        )}
+
+        {!imageSrc && !loading && (
+          <div className="upload-overlay">
+            <h2>Select an Image to Start</h2>
+            <button onClick={handleUpload} className="primary" style={{ marginTop: 20 }}>
+              Upload Image
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
