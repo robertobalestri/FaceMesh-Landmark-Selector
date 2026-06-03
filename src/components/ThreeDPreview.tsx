@@ -53,7 +53,7 @@ export const ThreeDPreview: React.FC<ThreeDPreviewProps> = ({
             0.01,
             100
         );
-        camera.position.set(0, 0, 3);
+        camera.position.set(0, 0, 5.5);
         cameraRef.current = camera;
 
         const renderer = new THREE.WebGLRenderer({
